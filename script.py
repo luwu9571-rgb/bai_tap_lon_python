@@ -5,6 +5,7 @@ from pygame import mixer
 from pygame.locals import *
 
 from maps import map_list
+import score_manager
 
 pygame.mixer.pre_init(44100, -16, 2, 512)
 mixer.init()
@@ -26,11 +27,16 @@ main_menu=True
 paused=False
 in_tutorial=False
 score=0
-high_score=0
+high_score=score_manager.get_highest_score()
 font=pygame.font.SysFont('Arial',28,bold=True)
 cannon_group=pygame.sprite.Group()
 bullet_group=pygame.sprite.Group()
 coin_group=pygame.sprite.Group()
+shield_item_group=pygame.sprite.Group()
+disappearing_block_group=pygame.sprite.Group()
+moving_platform_group=pygame.sprite.Group()
+dash_bonus_group=pygame.sprite.Group()
+djump_bonus_group=pygame.sprite.Group()
 trap_down_group=pygame.sprite.Group()
 
 menu_bg=pygame.image.load('image/Background1.png')
@@ -138,6 +144,15 @@ class monster(pygame.sprite.Sprite):
             self.current_frame=0
         self.image=self.frame[int(self.current_frame)]
         if self.hitbox.colliderect(player.hitbox):
+            if player.is_iframe:
+                return 0
+            if player.has_shield:
+                player.has_shield=False
+                player.is_iframe=True
+                player.iframe_time=pygame.time.get_ticks()
+                self.rect.x-=300
+                self.hitbox.center=self.rect.center
+                return 0
             return -1
         return 0
     def draw(self,surface,camera):
@@ -167,7 +182,12 @@ class endlessworld():
         ]
         self.tile_list=[]
         self.coin_group = pygame.sprite.Group()
+        self.shield_item_group = pygame.sprite.Group()
+        self.dash_bonus_group = pygame.sprite.Group()
+        self.djump_bonus_group = pygame.sprite.Group()
         self.trap_down_group = pygame.sprite.Group()
+        self.moving_platform_group = pygame.sprite.Group()
+        self.disappearing_block_group = pygame.sprite.Group()
         self.build_combined_world()
         for room_idx, room_data in enumerate(self.active_room):
             self.spawn_entities(room_data,room_idx)
@@ -183,6 +203,25 @@ class endlessworld():
                 elif tile==15:
                     trap_down=Trap_down(x,y)
                     self.trap_down_group.add(trap_down)
+                elif tile==16:
+                    dash_bonus=Dash_bonus(x,y)
+                    self.dash_bonus_group.add(dash_bonus)
+                elif tile==17:
+                    djump_bonus=Djump_bonus(x,y)
+                    self.djump_bonus_group.add(djump_bonus)
+                elif tile==18:
+                    shield_item=Shield_item(x,y)
+                    self.shield_item_group.add(shield_item)
+                elif tile==19:
+                    disappearing_block=Disappearing_block(x,y)
+                    self.disappearing_block_group.add(disappearing_block)
+                elif tile==20:
+                    moving_platform=Moving_platform(x,y,direction='horizontal')
+                    self.moving_platform_group.add(moving_platform)
+                elif tile == 21:
+                    moving_platform = Moving_platform(x, y, direction='vertical')
+                    self.moving_platform_group.add(moving_platform)
+
 
     def build_combined_world(self):
         self.tile_list.clear()
@@ -268,7 +307,6 @@ class endlessworld():
                         cannon = Cannon(x, y, tile_size, direction="right",shoot_cooldown=90)
                         cannon_group.add(cannon)
 
-
                     col_count+=1
                 row_count+=1
     def update(self,player,camera,chaser_monster=None):
@@ -284,6 +322,12 @@ class endlessworld():
                 chaser_monster.hitbox.x-=self.room_width
             for coin in self.coin_group:
                 coin.rect.x-=self.room_width
+            for shield_item in self.shield_item_group:
+                shield_item.rect.x-=self.room_width
+            for dash_bonus in self.dash_bonus_group:
+                dash_bonus.rect.x-=self.room_width
+            for djump_bonus in self.djump_bonus_group:
+                djump_bonus.rect.x-=self.room_width
             for trap in trap_group:
                 trap.rect.x -= self.room_width
             for trap_down in self.trap_down_group:
@@ -293,6 +337,10 @@ class endlessworld():
                 shroom.rect.x -= self.room_width
             for cannon in cannon_group:
                 cannon.rect.x -= self.room_width
+            for disappearing_block in self.disappearing_block_group:
+                disappearing_block.rect.x-=self.room_width
+            for moving_platform in self.moving_platform_group:
+                moving_platform.rect.x-=self.room_width
             self.spawn_entities(new_room,room_idx=2)
 
             self.build_combined_world()
@@ -303,9 +351,14 @@ class endlessworld():
             random.choice(self.random_map_list)
         ]
         self.coin_group.empty()
+        self.shield_item_group.empty()
+        self.dash_bonus_group.empty()
+        self.djump_bonus_group.empty()
         trap_group.empty()
         self.trap_down_group.empty()
         mushroom_group.empty()
+        self.disappearing_block_group.empty()
+        self.moving_platform_group.empty()
         cannon_group.empty()
         bullet_group.empty()
         self.build_combined_world()
@@ -339,6 +392,14 @@ class Bullet(pygame.sprite.Sprite):
             return 0
 
         if self.hitbox.colliderect(player.hitbox):
+            if player.is_iframe:
+                return 0
+            if player.has_shield:
+                player.has_shield = False
+                player.is_iframe = True
+                player.iframe_time = pygame.time.get_ticks()
+                player.hitbox.center = self.rect.center
+                return 0
             return -1
         for tile in world.tile_list:
             if tile[1].colliderect(self.hitbox):
@@ -401,6 +462,21 @@ class Cannon(pygame.sprite.Sprite):
         bullet=Bullet(spawn_x,spawn_y,vx,vy)
         bullet_group.add(bullet)
 
+class Shield_item(pygame.sprite.Sprite):
+    def __init__(self,x,y,tile_size=24):
+        super().__init__()
+        img=pygame.image.load('image/shield_item.png')
+        self.image=pygame.transform.scale(img,(tile_size,tile_size))
+        self.rect=self.image.get_rect(topleft=(x,y))
+    def update(self,player):
+        if self.rect.colliderect(player.hitbox):
+            player.active_shield()
+            print("haha")
+            self.kill()
+            return True
+        return False
+
+
 class Ghost():
     def __init__(self,x,y,image):
         self.x=x
@@ -459,6 +535,80 @@ class Trap_down(pygame.sprite.Sprite):
                 if tile_rect.colliderect(self.hitbox):
                     self.kill()
                     break
+
+class Disappearing_block(pygame.sprite.Sprite):
+    def __init__(self,x,y,active_time=2000,hidden_time=2000,offset=0):
+        super().__init__()
+        self.image_origin=pygame.image.load('image/disappearing_block.png')
+        self.image = self.image_origin.copy()
+        self.image=pygame.transform.scale(self.image,(tile_size,tile_size))
+        self.rect=self.image.get_rect(topleft=(x,y))
+        self.active_time=active_time
+        self.hidden_time=hidden_time
+        self.offset=offset
+        self.is_active=True
+    def update(self):
+        current_time=pygame.time.get_ticks()+self.offset
+        cycle_time=self.hidden_time+self.active_time
+        time_in_cycle=current_time%cycle_time
+        self.image=self.image.copy()
+        if time_in_cycle<self.active_time:
+            self.is_active=True
+            self.image.set_alpha(255)
+        else:
+            self.is_active=False
+            self.image.set_alpha(60)
+        if self.is_active:
+            if player.hitbox.colliderect(self.rect) :
+                if player.vel_y >= 0 and player.hitbox.bottom - player.vel_y <= self.rect.top + 10:
+                    player.in_air = False
+                    player.jump_count=0
+                    player.hitbox.bottom = self.rect.top
+                    player.vel_y = 0
+                elif player.vel_y<0:
+                    player.hitbox.top=self.rect.bottom
+                    player.vel_y = 0
+                else:
+                    if player.hitbox.centerx<self.rect.centerx:
+                        player.hitbox.right=self.rect.left
+                    else:
+                        player.hitbox.left=self.rect.right
+            for bullet in bullet_group:
+                if bullet.rect.colliderect(self.rect):
+                    bullet.kill()
+class Moving_platform(pygame.sprite.Sprite):
+    def __init__(self,x,y,moverange=75,speed=1.5,direction='horizontal'):
+        super().__init__()
+        self.image=pygame.image.load('image/moving_platform.png')
+        self.image=pygame.transform.scale(self.image,(tile_size*2,tile_size/1.25))
+        self.rect=self.image.get_rect(topleft=(x,y))
+
+        self.startx=x
+        self.starty=y
+        self.moverange=moverange
+        self.speed=speed
+        self.direction=direction
+        self.movement=speed
+    def update(self):
+        if self.direction=='horizontal':
+            self.rect.x+=self.movement
+            if abs(self.rect.x-self.startx)>=self.moverange:
+                self.movement=-self.movement
+        elif self.direction=='vertical':
+            self.rect.y+=self.movement
+            if abs(self.rect.y-self.starty)>=self.moverange:
+                self.movement*=-1
+        if player.hitbox.colliderect(self.rect):
+            if player.vel_y >= 0 and player.hitbox.bottom-player.vel_y<=self.rect.top+10:
+                player.vel_y = 0
+                player.hitbox.bottom = self.rect.top
+                player.in_air = False
+                player.jump_count = 0
+                player.dash_charges = 1
+                if self.direction == 'horizontal':
+                    player.hitbox.x += self.movement
+                elif self.direction == 'vertical':
+                    player.hitbox.y += self.movement
 
 class Camera:
     def __init__(self,width,height,deadzone_width=250):
@@ -642,20 +792,109 @@ class Coin(pygame.sprite.Sprite):
             coin_sf.play()
             return True
         return False
-
-
+class Dash_bonus(pygame.sprite.Sprite):
+    def __init__(self,x,y,tile_size=24,cooldown_time=2000):
+        super().__init__()
+        img=pygame.image.load('image/dash_bonus.png')
+        self.origin=pygame.transform.scale(img,(tile_size,tile_size))
+        img_cooldown=pygame.image.load('image/dash_bonus_cooldown.png')
+        self.cooldown=pygame.transform.scale(img_cooldown,(tile_size,tile_size))
+        self.image=self.origin
+        self.rect = self.image.get_rect()
+        self.rect.x = x
+        self.rect.y = y
+        self.is_active=True
+        self.cooldown_time=cooldown_time
+        self.cooldown_start=0
+    def update(self,player):
+        current_time=pygame.time.get_ticks()
+        if not self.is_active:
+            if current_time-self.cooldown_start>=self.cooldown_time:
+                self.is_active=True
+                self.image=self.origin
+            return False
+        if self.rect.colliderect(player.hitbox):
+            print("dash_bonus")
+            self.is_active=False
+            self.image=self.cooldown
+            self.cooldown_start=current_time
+            if player.dash_charges<player.max_dash:
+                player.dash_charges+=1
+            return True
+        return False
+class Djump_bonus(pygame.sprite.Sprite):
+    def __init__(self,x,y,tile_size=24,cooldown_time=2000):
+        super().__init__()
+        img=pygame.image.load('image/djump_bonus.png')
+        self.origin=pygame.transform.scale(img,(tile_size,tile_size))
+        img_cooldown=pygame.image.load('image/djump_bonus_cooldown.png')
+        self.cooldown=pygame.transform.scale(img_cooldown,(tile_size,tile_size))
+        self.image=self.origin
+        self.rect = self.image.get_rect()
+        self.rect.x = x
+        self.rect.y = y
+        self.is_active=True
+        self.cooldown_time=cooldown_time
+        self.cooldown_start=0
+    def update(self,player):
+        current_time=pygame.time.get_ticks()
+        if not self.is_active:
+            if current_time-self.cooldown_start>=self.cooldown_time:
+                self.is_active=True
+                self.image=self.origin
+            return False
+        if self.rect.colliderect(player.hitbox):
+            self.is_active=False
+            self.image=self.cooldown
+            self.cooldown_start=current_time
+            print("djump bonus1")
+            player.jump_count -= 1
+            return True
+        return False
 class Player():
     def __init__(self,x,y):
         self.reset(x,y)
+        self.has_shield=False
+        self.shield_time=0
+        self.shield_duration=30000
+        self.is_iframe=False
+        self.iframe_time=0
+        self.iframe_duration=3000
+        self.shield_radius=28
+        self.shield_surface = pygame.Surface((self.shield_radius * 2, self.shield_radius * 2), pygame.SRCALPHA)
+        pygame.draw.circle(self.shield_surface, (0, 200, 255, 80), (self.shield_radius, self.shield_radius), self.shield_radius)
+        pygame.draw.circle(self.shield_surface, (0, 255, 255, 200), (self.shield_radius, self.shield_radius), self.shield_radius, 2)
+    def active_shield(self):
+        self.has_shield=True
+        self.shield_time=pygame.time.get_ticks()
 
     def draw(self,surface,camera):
         for ghost in self.ghosts:
             ghost.image.set_alpha(ghost.alpha)
             surface.blit(ghost.image,camera.apply(pygame.Rect(ghost.x,ghost.y,64,64)))
+        player_screen_rect=camera.apply(self.rect)
+        current_time=pygame.time.get_ticks()
+        if self.has_shield:
+            time_left=self.shield_duration-(current_time-self.shield_time)
+            is_warning_time = time_left <= 5000
+            should_draw_shield = not is_warning_time or (current_time // 150 % 2 == 0)
 
-        surface.blit(self.image,camera.apply(self.rect))
+            if should_draw_shield:
+                shield_pos = (player_screen_rect.centerx - self.shield_radius,
+                              player_screen_rect.centery - self.shield_radius)
+                surface.blit(self.shield_surface, shield_pos)
+        if self.is_iframe and (pygame.time.get_ticks()//100)%2==0:
+            pass
+        else:
+            surface.blit(self.image,player_screen_rect)
 
     def update(self, world, game_over):
+        current_time = pygame.time.get_ticks()
+        if self.has_shield and (current_time - self.shield_time >= self.shield_duration):
+            self.has_shield = False
+        if self.is_iframe and (current_time - self.iframe_time >= self.iframe_duration):
+            self.is_iframe = False
+
         tile_list=world.tile_list if hasattr(world,'tile_list') else world
         dx=0
         dy=0
@@ -679,9 +918,9 @@ class Player():
 
             if self.dash_cooldown_time>0:
                 self.dash_cooldown_time -= 1
-            if key[pygame.K_LSHIFT] and self.can_dash and self.dash_cooldown_time==0:
+            if key[pygame.K_LSHIFT] and self.dash_charges>0 and self.dash_cooldown_time==0:
                 self.is_dashing=True
-                self.can_dash=False
+                self.dash_charges-=1
                 dash_sf.play()
                 self.dash_time=self.dash_duration
                 self.dash_cooldown_time=self.dash_cooldown
@@ -738,6 +977,10 @@ class Player():
                         self.in_air=True
                 if not key[pygame.K_SPACE]:
                     self.jumped=False
+                if self.in_air and not self.was_in_air:
+                    if self.jump_count==0:
+                        self.jump_count=1
+                self.was_in_air=self.in_air
 
 
                 if self.direction==1:
@@ -769,7 +1012,7 @@ class Player():
                     if self.in_air:
                         self.on_wall=True
                         self.jump_count=0
-                        self.can_dash=True
+                        self.dash_charges=1
                         if dx>0:
                             self.wall_direction=1
                         elif dx<0:
@@ -786,14 +1029,29 @@ class Player():
                     self.vel_y=0
                     self.in_air=False
                     self.jump_count=0
-                    self.can_dash=True
+                    self.dash_charges=1
 
             for trap in trap_group:
                 if self.hitbox.colliderect(trap.hitbox):
+                    if self.is_iframe:
+                        continue
+                    if self.has_shield:
+                        self.has_shield = False
+                        self.is_iframe = True
+                        self.iframe_time = pygame.time.get_ticks()
+                        self.hitbox.center = self.rect.center
+                        continue
                     game_over=-1
-                    print("lmao")
             for trap_down in endlessworld.trap_down_group:
                 if self.hitbox.colliderect(trap_down.hitbox):
+                    if self.is_iframe:
+                        continue
+                    if self.has_shield:
+                        self.has_shield = False
+                        self.is_iframe = True
+                        self.iframe_time = pygame.time.get_ticks()
+                        self.hitbox.center = self.rect.center
+                        continue
                     game_over=-1
                     print("game_over")
 
@@ -812,7 +1070,6 @@ class Player():
                 ghost.update()
                 if ghost.alpha<=0:
                     self.ghosts.remove(ghost)
-
         #pygame.draw.rect(screen,(255,255,255),self.hitbox,2)
 
         return game_over
@@ -849,6 +1106,7 @@ class Player():
         self.vel_x = 0
         self.jumped = False
         self.in_air = True
+        self.was_in_air = False
         self.max_jump = 2
         self.jump_count = 0
 
@@ -856,7 +1114,8 @@ class Player():
         self.wall_direction = 0
 
         self.is_dashing = False
-        self.can_dash = True
+        self.dash_charges = 1
+        self.max_dash=2
         self.dash_time = 0
         self.dash_cooldown_time = 0
         self.dash_speed = 12
@@ -873,6 +1132,11 @@ class World():
         self.text_list = []
         self.tile_list=[]
         self.coin_group=pygame.sprite.Group()
+        self.shield_item_group=pygame.sprite.Group()
+        self.dash_bonus_group=pygame.sprite.Group()
+        self.disappearing_block_group=pygame.sprite.Group()
+        self.moving_platform_group=pygame.sprite.Group()
+        self.djump_bonus_group=pygame.sprite.Group()
         self.grass_img=pygame.image.load('image/grass.png')
         self.dirt_img=pygame.image.load('image/dirt.png')
         self.platform_single_img = pygame.image.load('image/platform_single.png')
@@ -886,11 +1150,18 @@ class World():
     def build_world(self):
         trap_group.empty()
         mushroom_group.empty()
+        disappearing_block_group.empty()
+        moving_platform_group.empty()
         cannon_group.empty()
         bullet_group.empty()
         trap_down_group.empty()
         trap_down_group.empty()
         self.coin_group.empty()
+        self.disappearing_block_group.empty()
+        self.moving_platform_group.empty()
+        self.shield_item_group.empty()
+        self.dash_bonus_group.empty()
+        self.djump_bonus_group.empty()
         self.font = pygame.font.Font("font/Coiny-Regular.ttf", 18)
         row_count=0
         for row in self.data:
@@ -974,7 +1245,36 @@ class World():
                     y = row_count * tile_size + (tile_size -24)//2
                     coin = Coin(x, y, size=24, num_frame=4, anim_speed=0.2)
                     self.coin_group.add(coin)
-
+                elif tile==18:
+                    x = col_count * tile_size + (tile_size - 24) // 2
+                    y = row_count * tile_size + (tile_size - 24) // 2
+                    shield_item=Shield_item(x,y)
+                    self.shield_item_group.add(shield_item)
+                elif tile==16:
+                    x = col_count * tile_size + (tile_size - 24) // 2
+                    y = row_count * tile_size + (tile_size - 24) // 2
+                    dash_bonus=Dash_bonus(x,y)
+                    self.dash_bonus_group.add(dash_bonus)
+                elif tile==17:
+                    x = col_count * tile_size + (tile_size - 24) // 2
+                    y = row_count * tile_size + (tile_size - 24) // 2
+                    djump_bonus=Djump_bonus(x,y)
+                    self.djump_bonus_group.add(djump_bonus)
+                elif tile==19:
+                    x = col_count * tile_size + (tile_size - 24) // 2
+                    y = row_count * tile_size + (tile_size - 24) // 2
+                    disappearing_block=Disappearing_block(x,y)
+                    self.disappearing_block_group.add(disappearing_block)
+                elif tile==20:
+                    x = col_count * tile_size + (tile_size - 24) // 2
+                    y = row_count * tile_size + (tile_size - 24) // 2
+                    moving_platform=Moving_platform(x,y,direction='horizontal' )
+                    self.moving_platform_group.add(moving_platform)
+                elif tile==21:
+                    x = col_count * tile_size + (tile_size - 24) // 2
+                    y = row_count * tile_size + (tile_size - 24) // 2
+                    moving_platform=Moving_platform(x,y,direction='vertical',moverange=75 )
+                    self.moving_platform_group.add(moving_platform)
                 elif tile==100:
                     txt=tutorial_text(x_pos,y_pos,"Nhấn A/D để di chuyển",self.font,trigger_distance=90)
                     self.text_list.append(txt)
@@ -1011,6 +1311,27 @@ class World():
                 elif tile==111:
                     txt = tutorial_text(x_pos, y_pos, " Nhấn ESC để thoát về menu\ntrong màn chạy chính nhấn ESC\n       để tạm dừng game", self.font, trigger_distance=140)
                     self.text_list.append(txt)
+                elif tile==112:
+                    txt = tutorial_text(x_pos, y_pos, "         Các khối không ổn định này bật tắt liên tục\nBạn chỉ có thể tương tác với chúng khi chúng đang bật", self.font, trigger_distance=140)
+                    self.text_list.append(txt)
+                elif tile==113:
+                    txt = tutorial_text(x_pos, y_pos, " Lưu ý: Bạn không thể bám lên cạnh của khối không ổn định", self.font, trigger_distance=140)
+                    self.text_list.append(txt)
+                elif tile==114:
+                    txt = tutorial_text(x_pos, y_pos, "       Các khối này có thể tự di chuyển\n Hãy tận dụng nó để vượt chướng ngại vật", self.font, trigger_distance=140)
+                    self.text_list.append(txt)
+                elif tile==115:
+                    txt = tutorial_text(x_pos, y_pos, "    Viên ngọc đỏ này có thể \n giúp bạn tích trữ thêm 1 lần nhảy", self.font, trigger_distance=140)
+                    self.text_list.append(txt)
+                elif tile==116:
+                    txt = tutorial_text(x_pos, y_pos, " Còn ngọc xanh giúp bạn\n  tích trữ 1 lần lươt\n     (Tối đa 2 lần lướt)", self.font, trigger_distance=140)
+                    self.text_list.append(txt)
+                elif tile==117:
+                    txt = tutorial_text(x_pos, y_pos, " Lưu ý: Khi bạn chạm đất thì lượt nhảy và lướt tích trữ sẽ bị reset\n  Có nghĩa là bạn chỉ có thể tận dụng nó ở ngay trên không", self.font, trigger_distance=140)
+                    self.text_list.append(txt)
+                elif tile==118:
+                    txt = tutorial_text(x_pos, y_pos, " Item khiên này có thể đỡ cho bạn 1 đòn\n       Hiệu lực của khiên là 30s", self.font, trigger_distance=140)
+                    self.text_list.append(txt)
                 col_count+=1
             row_count+=1
 
@@ -1019,6 +1340,16 @@ class World():
             surface.blit(tile[0],camera.apply(tile[1]))
         for coin in self.coin_group:
             surface.blit(coin.image, camera.apply(coin.rect))
+        for shield_item in self.shield_item_group:
+            surface.blit(shield_item.image,camera.apply(shield_item.rect))
+        for dash_bonus in self.dash_bonus_group:
+            surface.blit(dash_bonus.image, camera.apply(dash_bonus.rect))
+        for djump_bonus in self.djump_bonus_group:
+            surface.blit(djump_bonus.image,camera.apply(djump_bonus.rect))
+        for disappearing_block in self.disappearing_block_group:
+            surface.blit(disappearing_block.image,camera.apply(disappearing_block.rect))
+        for moving_platform in self.moving_platform_group:
+            surface.blit(moving_platform.image,camera.apply(moving_platform.rect))
         if player:
             for txt in self.text_list:
                 txt.draw(surface,camera,player)
@@ -1055,30 +1386,30 @@ class tutorial_text:
             surface.blit(self.surface,camera.apply(self.rect))
 
 world_data=[
-[12,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,12],
-[12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12],
-[12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,8,0,10,0,0,0,0,12],
-[12,0,0,0,0,0,3,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,5,0,0,0,0,12],
-[12,0,14,0,0,0,109,0,0,0,0,0,0,0,0,0,0,0,0,0,110,0,0,0,0,0,0,0,0,0,0,12],
-[12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,111,0,0,0,0,12],
-[12,0,0,14,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12],
-[12,0,0,0,0,0,13,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12],
-[12,0,0,0,0,0,12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12],
-[12,0,0,0,0,0,12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12],
-[12,0,0,0,0,0,12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12],
-[12,0,0,0,0,0,12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12],
-[12,0,0,0,0,0,11,0,0,0,0,0,13,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12],
-[12,0,0,0,0,0,0,0,0,0,0,0,12,0,108,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12],
-[12,0,0,0,0,0,0,0,0,0,0,0,12,0,0,0,0,0,0,0,107,0,0,0,0,0,0,0,0,0,0,12],
-[12,0,0,0,0,0,0,0,0,0,0,0,12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12],
-[12,0,0,0,0,0,0,0,0,0,0,0,11,0,0,0,3,4,4,4,5,0,0,0,0,0,0,0,0,0,0,12],
-[12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,4,4,4,5,0,0,12],
-[12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,15,0,0,0,0,12],
-[12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,103,0,0,0,0,0,0,0,0,0,106,12],
-[12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,104,0,0,0,0,0,0,0,0,0,7,12],
-[12,0,0,0,100,0,0,0,0,101,0,0,0,0,0,102,0,0,1,2,0,0,0,0,105,0,0,0,0,1,1,2],
-[12,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,2,2,0,0,0,0,0,0,1,1,1,2,2,2],
-[2,1,1,1,1,1,1,1,2,2,2,1,1,1,1,1,1,1,2,2,6,6,6,6,6,6,2,2,2,2,2,2],
+[12,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,12],
+[12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12],
+[12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,8,0,10,0,0,0,0,0,0,0,0,0,0,0,0,0,112,0,0,0,0,0,0,0,19,0,0,0,0,0,0,113,0,0,0,0,0,0,0,12],
+[12,0,0,0,0,0,3,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,19,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12],
+[12,0,14,0,0,0,109,0,0,0,0,0,0,0,0,0,0,0,0,0,110,0,0,0,0,0,0,0,0,0,0,13,3,4,4,4,4,4,4,4,4,4,5,0,0,0,0,0,0,0,0,3,4,4,4,4,4,5,0,0,0,0,0,12],
+[12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,111,0,0,0,0,12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12],
+[12,0,0,14,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12,0,0,0,0,0,0,0,0,0,0,0,0,20,0,0,0,0,0,0,0,0,114,0,0,0,0,0,0,0,0,0,12],
+[12,0,0,0,0,0,13,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12,0,0,0,0,3,4,4,4,5,6,6,6,6,6,6,6,6,6,3,4,4,4,4,4,4,4,4,4,5,0,0,12],
+[12,0,0,0,0,0,12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12,0,0,0,0,0,0,0,0,0,3,4,4,4,4,4,4,4,5,0,0,0,0,0,0,0,0,0,0,0,0,0,12],
+[12,0,0,0,0,0,12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12],
+[12,0,0,0,0,0,12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12,0,21,0,0,0,0,0,0,0,0,0,0,0,0,0,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12],
+[12,0,0,0,0,0,12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12,0,0,0,0,0,0,0,0,0,0,0,17,0,3,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,5,12],
+[12,0,0,0,0,0,11,0,0,0,0,0,13,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12,0,115,0,0,0,0,0,116,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12],
+[12,0,0,0,0,0,0,0,0,0,0,0,12,0,108,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12,0,0,0,17,0,0,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12],
+[12,0,0,0,0,0,0,0,0,0,0,0,12,0,0,0,0,0,0,0,107,0,0,0,0,0,0,0,0,0,0,12,0,0,3,4,4,4,4,4,5,0,0,0,0,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12],
+[12,0,0,0,0,0,0,0,0,0,0,0,12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12],
+[12,0,0,0,0,0,0,0,0,0,0,0,11,0,0,0,3,4,4,4,5,0,0,0,0,0,0,0,0,0,0,12,0,0,0,0,0,0,117,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12],
+[12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,4,4,4,5,0,0,12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,10,0,0,0,0,0,0,0,0,12],
+[12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,15,0,0,0,0,0,12,21,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,4,4,4,4,4,4,4,4,4,4,5,12],
+[12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,103,0,0,0,0,0,0,0,0,0,106,12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12],
+[12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,104,0,0,0,0,0,0,0,0,0,7,12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,12],
+[12,0,0,0,100,0,0,0,0,101,0,0,0,0,0,102,0,0,1,2,0,0,0,0,105,0,0,0,0,1,1,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,118,0,0,0,0,0,0,0,0,0,0,12],
+[12,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,2,2,0,0,0,0,0,0,1,1,1,2,2,2,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,18,0,0,0,0,0,0,0,12],
+[2,1,1,1,1,1,1,1,2,2,2,1,1,1,1,1,1,1,2,2,6,6,6,6,6,6,2,2,2,2,2,2,1,1,1,2,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,6,6,6,1],
 ]
 
 trap_group=pygame.sprite.Group()
@@ -1089,7 +1420,6 @@ trap_down_group=pygame.sprite.Group()
 player=Player(100,700)
 camera=Camera(screen_width,screen_height)
 trap_group=pygame.sprite.Group()
-mushroom_group=pygame.sprite.Group()
 tutorial_world=World(world_data)
 endlessworld=endlessworld(tile_size)
 restart_button=button(screen_width//2-150,screen_height//1.25,restart_img,restart_hover_img)
@@ -1104,6 +1434,7 @@ pause_menu_button=button(screen_width//2,screen_height//2+200,main_menu_img,menu
 chaser_monster=monster(x=endlessworld.room_width-400,screen_height=screen_height,monster_width=800,num_frame=40,speed=1.5)
 
 run=True
+score_saved=False
 while run:
     clock.tick(fps)
 
@@ -1118,6 +1449,11 @@ while run:
         camera.update(player.rect,shake_enable=False)
         cannon_group.update(bullet_group)
         tutorial_world.coin_group.update(player)
+        tutorial_world.shield_item_group.update(player)
+        tutorial_world.dash_bonus_group.update(player)
+        tutorial_world.djump_bonus_group.update(player)
+        tutorial_world.moving_platform_group.update()
+        tutorial_world.disappearing_block_group.update()
         trap_down_group.update(tutorial_world)
         for mushroom in mushroom_group:
             mushroom.update(player)
@@ -1146,6 +1482,7 @@ while run:
             chaser_monster.rect.y=0
             endlessworld.reset_world()
             score=0
+            score_saved=False
             game_over=0
             main_menu=False
         if how_to_play_button.draw()==True:
@@ -1157,7 +1494,8 @@ while run:
             player.vel_y=0
             player.dx=0
             player.dy=0
-        high_score_button.draw()
+        if high_score_button.draw()==True:
+            score_manager.draw_leaderboard(screen,menu_bg,clock,fps)
         if quit_button.draw()==True:
             run=False
     else:
@@ -1171,12 +1509,26 @@ while run:
             for coin in endlessworld.coin_group:
                 if coin.update(player):
                     score+=1
+                    print("coin")
+            for dash_bonus in endlessworld.dash_bonus_group:
+                dash_bonus.update(player)
+            for djump_bonus in endlessworld.djump_bonus_group:
+                djump_bonus.update(player)
+            for shield_item in endlessworld.shield_item_group:
+                shield_item.update(player)
+            for disappearing_block in endlessworld.disappearing_block_group:
+                disappearing_block.update()
+            for moving_platform in endlessworld.moving_platform_group:
+                moving_platform.update()
+
             endlessworld.update(player,camera,chaser_monster)
             cannon_group.update(bullet_group)
             for trap_down in endlessworld.trap_down_group:
                 trap_down.update(endlessworld)
             for mushroom in mushroom_group:
                 mushroom.update(player)
+
+
             for bullet in bullet_group:
                 result=bullet.update(endlessworld,player)
                 if result==-1:
@@ -1196,14 +1548,26 @@ while run:
             screen.blit(bullet.image,camera.apply(bullet.rect))
         for coin in endlessworld.coin_group:
             screen.blit(coin.image,camera.apply(coin.rect))
+        for disappearing_block in endlessworld.disappearing_block_group:
+            screen.blit(disappearing_block.image,camera.apply(disappearing_block.rect))
+        for moving_platform in endlessworld.moving_platform_group:
+            screen.blit(moving_platform.image,camera.apply(moving_platform.rect))
+        for shield_item in endlessworld.shield_item_group:
+            screen.blit(shield_item.image,camera.apply(shield_item.rect))
+        for dash_bonus in endlessworld.dash_bonus_group:
+            screen.blit(dash_bonus.image,camera.apply(dash_bonus.rect))
+        for djump_bonus in endlessworld.djump_bonus_group:
+            screen.blit(djump_bonus.image,camera.apply(djump_bonus.rect))
 
         player.draw(screen,camera)
         chaser_monster.draw(screen,camera)
         draw_score(screen,score)
 
         if game_over == -1:
-            if score>high_score:
-                high_score=int(score)
+            if not score_saved:
+                score_manager.save_score_to_leaderboard(score)
+                high_score=score_manager.get_highest_score()
+                score_saved=True
             play_bgm('sound/dead_sound.mp3',volume=0.5)
             action=draw_game_over_screen()
             if action == "restart":
@@ -1215,6 +1579,7 @@ while run:
                 trap_down_group.empty()
                 endlessworld.reset_world()
                 score=0
+                score_saved=False
                 game_over=0
             elif action == "main":
                 player.reset(100,700)
@@ -1224,6 +1589,7 @@ while run:
                 trap_down_group.empty()
                 endlessworld.reset_world()
                 score=0
+                score_saved=False
                 main_menu=True
         elif paused:
             #screen.blit(player.image,player.rect)
@@ -1241,6 +1607,7 @@ while run:
                 trap_down_group.empty()
                 endlessworld.reset_world()
                 score=0
+                score_saved=False
                 pygame.mixer.music.unpause()
                 paused=False
             elif action == "pause_main":
@@ -1249,6 +1616,7 @@ while run:
                 chaser_monster.speed = chaser_monster.base_speed
                 endlessworld.reset_world()
                 score=0
+                score_saved=False
                 paused=False
                 pygame.mixer.music.stop()
                 '''quit_button.clicked=True'''

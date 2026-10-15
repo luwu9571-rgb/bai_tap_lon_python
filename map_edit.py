@@ -26,11 +26,12 @@ clock=pygame.time.Clock()
 
 current_map_index=0
 current_tile=1
-avalible_tile=[1,2,3,4,5,6,15,7,8,9,10,11,12,13,14]
+avalible_tile=[1,2,3,4,5,6,15,7,8,9,10,11,12,13,14,16,17,18,19,20,21]
 tile_name={
 1: "Grass", 2: "Dirt", 3: "Row Left", 4: "Row Mid", 5: "Row Right",
     6: "Trap",15:"Trap_down", 7: "Mushroom", 8: "Cannon L", 9: "Cannon R",10: "Coin",
-    11: "Col Bot", 12: "Col Mid", 13: "Col Top", 14: "Single"
+    11: "Col Bot", 12: "Col Mid", 13: "Col Top", 14: "Single",16: "dash_bonus", 17: "djump_bonus",
+    18: "shield_item", 19:"disapearing_block", 20:"low_moving_platform",21:"hight_moving_platform"
 }
 
 def get_frame(sheet_path,num_frames=1,index=0):
@@ -59,7 +60,9 @@ class mapeditor:
             4: "image/platform_row_mid.png", 5: "image/platform_row_right.png",
             6: "image/trap.png",15:"image/trap_down.png", 11: "image/platform_col_bot.png",
             12: "image/platform_col_mid.png", 13: "image/platform_col_top.png",
-            14: "image/platform_single.png"
+            14: "image/platform_single.png",16: "image/dash_bonus.png",
+            17: "image/djump_bonus.png", 18:"image/shield_item.png",19:"image/disappearing_block.png",
+            20: "image/moving_platform.png",21:"image/moving_platform.png"
         }
 
         for t_id, file_name in image_files.items():
